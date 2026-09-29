@@ -13,7 +13,7 @@ export function Logo({ size = 32 }: { size?: number }) {
       <defs>
         <linearGradient id={id} x1="0" y1="0" x2="1" y2="1">
           <stop offset="0" stopColor="rgb(var(--accent))" />
-          <stop offset="1" stopColor="#ff9a4d" />
+          <stop offset="1" stopColor="rgb(var(--accent2))" />
         </linearGradient>
       </defs>
       <rect width="32" height="32" rx="9" fill={`url(#${id})`} />
@@ -50,7 +50,7 @@ export function RouteArt({ className = "" }: { className?: string }) {
         <linearGradient id={gid} x1="0" x2="1">
           <stop offset="0" stopColor="rgb(var(--accent))" stopOpacity="0" />
           <stop offset=".5" stopColor="rgb(var(--accent))" />
-          <stop offset="1" stopColor="#ffd2a8" />
+          <stop offset="1" stopColor="rgb(var(--accent2))" />
         </linearGradient>
       </defs>
       {routes.map((d, i) => (

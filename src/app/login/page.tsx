@@ -6,6 +6,7 @@ import { FlaskConical, Building2, ArrowRight, ArrowLeft, Terminal } from "lucide
 import { api } from "@/lib/api";
 import { Callout, Spinner } from "@/components/ui";
 import { Avatar, RouteArt, Wordmark } from "@/components/brand";
+import ThemePicker from "@/components/ThemePicker";
 
 function BrandPanel() {
   return (
@@ -17,7 +18,7 @@ function BrandPanel() {
       <div className="relative"><span className="[&_span]:text-white [&_.text-muted]:text-white/60"><Wordmark /></span></div>
       <div className="relative max-w-md animate-rise">
         <h1 className="font-display text-4xl font-bold leading-[1.1] tracking-tight xl:text-5xl">
-          Hire people who&apos;ve been <span className="text-accent">on the floor</span>.
+          Hire people who&apos;ve been <span className="hero-hi">on the floor</span>.
         </h1>
         <p className="mt-4 text-base text-white/70">
           Kargo reads every CV for the pattern your best hires share: hands-on ops, building unasked, owning the call.
@@ -81,7 +82,7 @@ export default function Login() {
       <div className="mx-auto w-full max-w-md">
       <div className="mb-8 lg:hidden">
         <Wordmark />
-        <p className="mt-3 font-display text-2xl font-bold leading-tight">Hire people who&apos;ve been <span className="text-accent">on the floor</span>.</p>
+        <p className="mt-3 font-display text-2xl font-bold leading-tight">Hire people who&apos;ve been <span className="hero-hi">on the floor</span>.</p>
       </div>
       <h2 className="mb-1 hidden font-display text-2xl font-bold lg:block">Welcome</h2>
       {!state && !error && <Spinner />}
@@ -173,6 +174,11 @@ export default function Login() {
           <button disabled={busy} className="btn btn-primary w-full">Sign in</button>
         </form>
       )}
+
+      <div className="mt-10 border-t border-line/70 pt-5">
+        <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">Choose a look</div>
+        <ThemePicker />
+      </div>
 
       {state && multi && state.mode && (
         <button className="btn btn-ghost mt-4 px-2" disabled={busy} onClick={() => choose(null)}>

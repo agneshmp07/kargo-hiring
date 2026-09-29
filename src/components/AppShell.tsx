@@ -11,6 +11,7 @@ import { api, ApiError } from "@/lib/api";
 import type { Me } from "@/lib/types";
 import { Spinner } from "./ui";
 import { Avatar, Wordmark } from "./brand";
+import ThemePicker from "./ThemePicker";
 
 const MeCtx = createContext<Me | null>(null);
 export const useMe = () => useContext(MeCtx)!;
@@ -102,6 +103,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
             <ArrowLeftRight className="h-4 w-4" /> {m.demo ? "Go to the real product" : "Try the demo"}
           </button>
         )}
+        <ThemePicker compact />
         <div className="px-3 text-[11px] leading-snug text-muted/80">
           AI: {m.api_ready ? m.model : m.demo ? "keyword stand-in (no key)" : "no key set"} · {m.database}
         </div>

@@ -2,56 +2,76 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Kargo palette: freight navy + container orange, with teal for "good". RGB triplets so Tailwind can add opacity. */
-:root {
-  --bg: 244 245 248;
-  --surface: 255 255 255;
-  --sunken: 238 240 245;
-  --line: 223 227 235;
-  --fg: 15 27 45;
-  --muted: 92 104 124;
-  --navy: 15 27 45;
-  --accent: 242 107 29;
-  --accent-fg: 255 255 255;
-  --accent2: 20 160 150;
-  --good: 16 150 110;
-  --warn: 196 120 0;
-  --bad: 210 52 52;
-  --info: 45 110 220;
-  --violet: 124 82 214;
+/* ------------------------------------------------------------------------------------------
+   Three looks, switched with <html data-theme="...">. Colours are RGB triplets so Tailwind can
+   add opacity (bg-accent/10). Each theme also picks its fonts and a few surface details.
+   harbour   : freight navy + container orange; follows the system's light/dark setting
+   editorial : warm paper, serif headings, forest green; always light
+   aurora    : deep indigo, frosted glass, violet/cyan gradients; always dark
+------------------------------------------------------------------------------------------- */
+:root, [data-theme="harbour"] {
+  --bg: 244 245 248; --surface: 255 255 255; --sunken: 238 240 245; --line: 223 227 235;
+  --fg: 15 27 45; --muted: 92 104 124; --navy: 15 27 45;
+  --accent: 242 107 29; --accent-fg: 255 255 255; --accent2: 20 160 150;
+  --good: 16 150 110; --warn: 196 120 0; --bad: 210 52 52; --info: 45 110 220; --violet: 124 82 214;
+  --font-sans: var(--f-jakarta); --font-display: var(--f-space);
+  --tab-bg: var(--navy); --tab-fg: 255 255 255;
   color-scheme: light;
 }
 @media (prefers-color-scheme: dark) {
-  :root {
-    --bg: 9 14 25;
-    --surface: 16 24 39;
-    --sunken: 12 19 32;
-    --line: 32 43 62;
-    --fg: 232 237 245;
-    --muted: 146 158 180;
-    --navy: 6 10 20;
-    --accent: 255 128 56;
-    --accent-fg: 14 18 28;
-    --accent2: 45 205 190;
-    --good: 64 208 150;
-    --warn: 240 176 70;
-    --bad: 245 110 110;
-    --info: 110 165 245;
-    --violet: 176 146 250;
+  :root, [data-theme="harbour"] {
+    --bg: 9 14 25; --surface: 16 24 39; --sunken: 12 19 32; --line: 32 43 62;
+    --fg: 232 237 245; --muted: 146 158 180; --navy: 6 10 20;
+    --accent: 255 128 56; --accent-fg: 14 18 28; --accent2: 45 205 190;
+    --good: 64 208 150; --warn: 240 176 70; --bad: 245 110 110; --info: 110 165 245; --violet: 176 146 250;
+    --tab-bg: var(--accent); --tab-fg: var(--accent-fg);
     color-scheme: dark;
   }
+}
+[data-theme="editorial"] {
+  --bg: 246 241 231; --surface: 255 252 246; --sunken: 240 233 220; --line: 225 215 197;
+  --fg: 33 29 24; --muted: 108 98 84; --navy: 24 50 40;
+  --accent: 31 111 74; --accent-fg: 255 252 246; --accent2: 190 96 52;
+  --good: 31 128 80; --warn: 176 110 20; --bad: 180 52 40; --info: 44 92 150; --violet: 112 72 150;
+  --font-sans: var(--f-jakarta); --font-display: var(--f-fraunces);
+  --tab-bg: var(--fg); --tab-fg: var(--surface);
+  color-scheme: light;
+}
+[data-theme="aurora"] {
+  --bg: 7 7 22; --surface: 22 21 48; --sunken: 15 14 36; --line: 50 48 92;
+  --fg: 238 237 255; --muted: 164 162 206; --navy: 12 10 34;
+  --accent: 168 85 247; --accent-fg: 255 255 255; --accent2: 34 211 238;
+  --good: 52 211 153; --warn: 251 191 36; --bad: 251 113 133; --info: 96 165 250; --violet: 196 181 253;
+  --font-sans: var(--f-outfit); --font-display: var(--f-outfit);
+  --tab-bg: var(--accent); --tab-fg: 255 255 255;
+  color-scheme: dark;
 }
 
 html, body { background: rgb(var(--bg)); color: rgb(var(--fg)); }
 body {
   -webkit-font-smoothing: antialiased;
-  /* faint map-grid texture + a warm glow at the top */
+  /* harbour: faint map-grid texture + a warm glow at the top */
   background-image:
     radial-gradient(1200px 500px at 70% -10%, rgb(var(--accent) / 0.10), transparent 60%),
     radial-gradient(900px 400px at -10% 0%, rgb(var(--accent2) / 0.08), transparent 60%),
     radial-gradient(rgb(var(--fg) / 0.045) 1px, transparent 1px);
   background-size: auto, auto, 22px 22px;
   background-attachment: fixed;
+}
+[data-theme="editorial"] body {
+  /* paper: soft ruled texture, no glow */
+  background-image:
+    radial-gradient(1000px 420px at 85% -12%, rgb(var(--accent2) / 0.07), transparent 60%),
+    repeating-linear-gradient(0deg, rgb(var(--fg) / 0.022) 0 1px, transparent 1px 32px);
+  background-size: auto, auto;
+}
+[data-theme="aurora"] body {
+  /* northern lights: three large soft blobs */
+  background-image:
+    radial-gradient(900px 600px at 85% -5%, rgb(168 85 247 / 0.30), transparent 60%),
+    radial-gradient(800px 600px at -5% 30%, rgb(34 211 238 / 0.16), transparent 60%),
+    radial-gradient(900px 700px at 60% 110%, rgb(236 72 153 / 0.18), transparent 60%);
+  background-size: auto;
 }
 ::selection { background: rgb(var(--accent) / 0.25); }
 
@@ -69,6 +89,32 @@ body {
   .kbd { @apply ml-1 rounded-md border border-current px-1.5 py-px font-mono text-[10px] font-semibold opacity-60; }
   .chip { @apply inline-flex items-center gap-1 rounded-full bg-sunken px-2.5 py-1 text-xs font-medium text-muted ring-1 ring-inset ring-line; }
 }
+
+
+/* per-theme surfaces */
+[data-theme="editorial"] .card { border-radius: 14px; box-shadow: 0 1px 0 rgb(var(--fg) / 0.04); border-color: rgb(var(--line)); }
+[data-theme="editorial"] .h1 { font-weight: 600; letter-spacing: -0.01em; }
+[data-theme="editorial"] .btn { border-radius: 10px; box-shadow: none; }
+[data-theme="editorial"] .btn-primary { box-shadow: 0 6px 18px -10px rgb(var(--accent) / 0.8); }
+[data-theme="aurora"] .card {
+  background: linear-gradient(160deg, rgb(255 255 255 / 0.07), rgb(255 255 255 / 0.025));
+  border-color: rgb(255 255 255 / 0.09);
+  backdrop-filter: blur(18px) saturate(140%); -webkit-backdrop-filter: blur(18px) saturate(140%);
+  box-shadow: 0 20px 50px -24px rgb(0 0 0 / 0.7), inset 0 1px 0 rgb(255 255 255 / 0.06);
+}
+[data-theme="aurora"] .btn { background: rgb(255 255 255 / 0.05); border-color: rgb(255 255 255 / 0.12); }
+[data-theme="aurora"] .btn-primary {
+  background: linear-gradient(120deg, rgb(168 85 247), rgb(236 72 153) 55%, rgb(251 146 60));
+  border-color: transparent; box-shadow: 0 10px 30px -10px rgb(236 72 153 / 0.6);
+}
+[data-theme="aurora"] .btn-ghost { background: transparent; border-color: transparent; }
+[data-theme="aurora"] .input { background: rgb(255 255 255 / 0.05); border-color: rgb(255 255 255 / 0.12); }
+[data-theme="aurora"] .h1 { background: linear-gradient(90deg, rgb(var(--fg)), rgb(196 181 253)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.tab-active { background: rgb(var(--tab-bg)); color: rgb(var(--tab-fg)); }
+/* the highlighted words in headlines, readable on each theme's brand panel */
+.hero-hi { color: rgb(var(--accent)); }
+[data-theme="editorial"] .hero-hi { color: rgb(236 170 120); font-style: italic; }
+[data-theme="aurora"] .hero-hi { background: linear-gradient(90deg, rgb(196 132 252), rgb(34 211 238)); -webkit-background-clip: text; background-clip: text; color: transparent; }
 
 /* used from inline styles (route art, confetti), so defined here rather than via Tailwind */
 @keyframes dash { to { stroke-dashoffset: 0; } }

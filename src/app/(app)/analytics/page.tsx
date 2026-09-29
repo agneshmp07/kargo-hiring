@@ -57,7 +57,7 @@ export default function Analytics() {
           {d.funnel.map(([stage, n]) => (
             <div key={stage} className="grid grid-cols-[minmax(120px,220px)_1fr_40px] items-center gap-3 text-sm">
               <span className="text-muted">{stage}</span>
-              <div className="h-7 overflow-hidden rounded-lg bg-sunken"><div className="h-full rounded-lg bg-gradient-to-r from-accent to-[#ffb27a] transition-all duration-700" style={{ width: `${Math.max((100 * n) / max, n ? 4 : 0)}%` }} /></div>
+              <div className="h-7 overflow-hidden rounded-lg bg-sunken"><div className="h-full rounded-lg bg-gradient-to-r from-accent to-accent2 transition-all duration-700" style={{ width: `${Math.max((100 * n) / max, n ? 4 : 0)}%` }} /></div>
               <span className="text-right font-display font-bold tabular-nums">{n}</span>
             </div>
           ))}

@@ -64,7 +64,7 @@ export function Tabs<T extends string>({ value, tabs, onChange }: {
     <div className="-mx-1 flex gap-1.5 overflow-x-auto px-1 pb-1">
       {tabs.map((t) => (
         <button key={t.id} onClick={() => onChange(t.id)}
-          className={`whitespace-nowrap rounded-full px-4 py-2 text-sm transition ${value === t.id ? "bg-navy font-semibold text-white shadow-soft dark:bg-accent dark:text-accent-fg" : "bg-surface/70 text-muted ring-1 ring-inset ring-line hover:text-fg"}`}>
+          className={`whitespace-nowrap rounded-full px-4 py-2 text-sm transition ${value === t.id ? "tab-active font-semibold shadow-soft" : "bg-surface/70 text-muted ring-1 ring-inset ring-line hover:text-fg"}`}>
           {t.label}
         </button>
       ))}
