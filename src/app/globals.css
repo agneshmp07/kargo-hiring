@@ -1,0 +1,82 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Kargo palette: freight navy + container orange, with teal for "good". RGB triplets so Tailwind can add opacity. */
+:root {
+  --bg: 244 245 248;
+  --surface: 255 255 255;
+  --sunken: 238 240 245;
+  --line: 223 227 235;
+  --fg: 15 27 45;
+  --muted: 92 104 124;
+  --navy: 15 27 45;
+  --accent: 242 107 29;
+  --accent-fg: 255 255 255;
+  --accent2: 20 160 150;
+  --good: 16 150 110;
+  --warn: 196 120 0;
+  --bad: 210 52 52;
+  --info: 45 110 220;
+  --violet: 124 82 214;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: 9 14 25;
+    --surface: 16 24 39;
+    --sunken: 12 19 32;
+    --line: 32 43 62;
+    --fg: 232 237 245;
+    --muted: 146 158 180;
+    --navy: 6 10 20;
+    --accent: 255 128 56;
+    --accent-fg: 14 18 28;
+    --accent2: 45 205 190;
+    --good: 64 208 150;
+    --warn: 240 176 70;
+    --bad: 245 110 110;
+    --info: 110 165 245;
+    --violet: 176 146 250;
+    color-scheme: dark;
+  }
+}
+
+html, body { background: rgb(var(--bg)); color: rgb(var(--fg)); }
+body {
+  -webkit-font-smoothing: antialiased;
+  /* faint map-grid texture + a warm glow at the top */
+  background-image:
+    radial-gradient(1200px 500px at 70% -10%, rgb(var(--accent) / 0.10), transparent 60%),
+    radial-gradient(900px 400px at -10% 0%, rgb(var(--accent2) / 0.08), transparent 60%),
+    radial-gradient(rgb(var(--fg) / 0.045) 1px, transparent 1px);
+  background-size: auto, auto, 22px 22px;
+  background-attachment: fixed;
+}
+::selection { background: rgb(var(--accent) / 0.25); }
+
+@layer components {
+  .card { @apply rounded-2xl border border-line/80 bg-surface shadow-soft; }
+  .btn { @apply inline-flex select-none items-center justify-center gap-1.5 rounded-xl border border-line bg-surface px-3.5 py-2 text-sm font-medium text-fg shadow-sm transition duration-150 hover:-translate-y-px hover:border-fg/20 hover:shadow-soft active:translate-y-0 disabled:pointer-events-none disabled:opacity-50; }
+  .btn-primary { @apply border-transparent bg-accent text-accent-fg shadow-glow hover:bg-accent hover:brightness-105; }
+  .btn-good { @apply border-transparent bg-good text-white hover:brightness-105; }
+  .btn-ghost { @apply border-transparent bg-transparent shadow-none hover:bg-sunken hover:shadow-none; }
+  .input { @apply w-full rounded-xl border border-line bg-surface px-3 py-2 text-sm text-fg placeholder:text-muted focus:border-accent focus:outline-none focus:ring-4 focus:ring-accent/15; }
+  .label { @apply mb-1 block text-sm font-medium; }
+  .h1 { @apply font-display text-3xl font-bold tracking-tight; }
+  .h2 { @apply font-display text-lg font-semibold tracking-tight; }
+  .muted { @apply text-sm text-muted; }
+  .kbd { @apply ml-1 rounded-md border border-current px-1.5 py-px font-mono text-[10px] font-semibold opacity-60; }
+  .chip { @apply inline-flex items-center gap-1 rounded-full bg-sunken px-2.5 py-1 text-xs font-medium text-muted ring-1 ring-inset ring-line; }
+}
+
+/* used from inline styles (route art, confetti), so defined here rather than via Tailwind */
+@keyframes dash { to { stroke-dashoffset: 0; } }
+@keyframes confetti {
+  0% { transform: translateY(-10vh) rotate(0); opacity: 1; }
+  100% { transform: translateY(110vh) rotate(720deg); opacity: .9; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
+}

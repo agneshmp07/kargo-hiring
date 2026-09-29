@@ -1,0 +1,145 @@
+{
+  "version": "v0.2-after-stress",
+  "blend": {
+    "layer_a_pattern": 0.7,
+    "layer_b_role": 0.3
+  },
+  "negative_collinearity_discount": 0.5,
+  "bands": {
+    "strong": 65,
+    "borderline": 45
+  },
+  "rules": {
+    "p1_floor_to_borderline": true,
+    "low_confidence_to_borderline": true,
+    "n1_caps_p1_at_zero": true,
+    "gate_tolerance_years": 1,
+    "p1_floor_min": 0.5,
+    "role_rescue_B": 55
+  },
+  "zero_weight_by_policy": [
+    "institute_tier",
+    "quantified_results",
+    "tech_stack_depth",
+    "name",
+    "gender",
+    "age",
+    "photo",
+    "career_gap"
+  ],
+  "layer_a_variables": {
+    "P1": "Hands-on ground-level ops in freight/3PL/port/CHA/supply chain (1 = 1+ yr hands-on role; 0.5 = hands-on ops in another ops-heavy domain; 0 = none or desk/API only)",
+    "P2": "Built a tool/process for an observed pain, adopted by peers unasked (1 = adoption evidence; 0.5 = built, no adoption)",
+    "P3": "Owns decisions with no layer above (1 = sole owner / reports to founder / independent; 0.5 = owns area inside team; 0 = supports others)",
+    "P4": "Personally resolved a live crisis under time pressure (1 = named incident; 0.5 = participated)",
+    "P5": "Killed something / documented a failure / ran a post-mortem (1 = with what changed; 0.5 = vague)",
+    "N1": "Logistics exposure only via systems/APIs/desk",
+    "N2": "Entire career in layered orgs where calls were made above them"
+  },
+  "hire_coding": {
+    "_outcome": {
+      "Rohan": "E",
+      "Sunita": "E",
+      "Aditya": "E",
+      "Meghna": "E",
+      "Lavanya": "E",
+      "Vikram": "M",
+      "Rahul": "M",
+      "Preetham": "B"
+    },
+    "P1": {
+      "Rohan": 1,
+      "Sunita": 1,
+      "Aditya": 1,
+      "Meghna": 1,
+      "Lavanya": 1,
+      "Vikram": 0,
+      "Rahul": 0,
+      "Preetham": 0
+    },
+    "P2": {
+      "Rohan": 1,
+      "Sunita": 1,
+      "Aditya": 1,
+      "Meghna": 1,
+      "Lavanya": 1,
+      "Vikram": 1,
+      "Rahul": 1,
+      "Preetham": 0
+    },
+    "P3": {
+      "Rohan": 1,
+      "Sunita": 1,
+      "Aditya": 1,
+      "Meghna": 1,
+      "Lavanya": 1,
+      "Vikram": 0,
+      "Rahul": 1,
+      "Preetham": 0
+    },
+    "P4": {
+      "Rohan": 1,
+      "Sunita": 1,
+      "Aditya": 1,
+      "Meghna": 1,
+      "Lavanya": 1,
+      "Vikram": 0,
+      "Rahul": 0,
+      "Preetham": 1
+    },
+    "P5": {
+      "Rohan": 0,
+      "Sunita": 0,
+      "Aditya": 1,
+      "Meghna": 0,
+      "Lavanya": 1,
+      "Vikram": 0,
+      "Rahul": 0,
+      "Preetham": 0
+    },
+    "N1": {
+      "Rohan": 0,
+      "Sunita": 0,
+      "Aditya": 0,
+      "Meghna": 0,
+      "Lavanya": 0,
+      "Vikram": 0,
+      "Rahul": 0,
+      "Preetham": 1
+    },
+    "N2": {
+      "Rohan": 0,
+      "Sunita": 0,
+      "Aditya": 0,
+      "Meghna": 0,
+      "Lavanya": 0,
+      "Vikram": 1,
+      "Rahul": 0,
+      "Preetham": 1
+    }
+  },
+  "layer_b": {
+    "PM": {
+      "weights": {
+        "zero_to_one_early_stage": 35,
+        "shipped_with_adoption": 35,
+        "b2b_operational_users": 30
+      },
+      "gate_years_pm": [
+        2,
+        4
+      ]
+    },
+    "SPM": {
+      "weights": {
+        "integration_platform_data": 40,
+        "build_config_avoid_calls": 35,
+        "early_stage_unstructured": 25
+      },
+      "gate_years_pm": [
+        5,
+        8
+      ]
+    }
+  }
+}

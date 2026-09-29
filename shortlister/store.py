@@ -1,0 +1,554 @@
+"""Store for candidates, decisions, emails and spot-checks, plus an append-only
+audit log of every decision and delivery status (G2.3).
+
+Backend: Neon / Postgres when DATABASE_URL is set (postgresql://...), otherwise a
+local SQLite file at data/kargo.db. The identity vault is never stored here; it
+stays a separate local file (see vault.py).
+"""
+from __future__ import annotations
+
+import json
+import os
+import re
+import sqlite3
+import threading
+import time
+from contextlib import contextmanager
+from datetime import datetime, timezone
+from pathlib import Path
+
+from . import config
+
+SCHEMA = """
+CREATE TABLE IF NOT EXISTS candidates (
+    id TEXT PRIMARY KEY,
+    file_name TEXT UNIQUE NOT NULL,
+    file_hash TEXT NOT NULL,
+    applied_role TEXT,
+    role_source TEXT,
+    redacted_text TEXT,
+    redaction_removed TEXT,
+    llm_json TEXT,
+    llm_error TEXT,
+    evidence_flags TEXT,
+    results_json TEXT,
+    better_fit TEXT,
+    confidence TEXT,
+    low_conf_reasons TEXT,
+    parse_error TEXT,
+    batch_id TEXT,
+    scored_at TEXT,
+    backlog INTEGER DEFAULT 0,
+    source TEXT,
+    received_at TEXT,
+    uploaded_by TEXT,
+    duplicate_of TEXT,
+    params_version INTEGER,
+    usage_json TEXT,
+    whatsapp_opt_in INTEGER DEFAULT 0,
+    erased_at TEXT
+);
+CREATE TABLE IF NOT EXISTS decisions (
+    id {AUTO_ID},
+    ts TEXT NOT NULL,
+    candidate_id TEXT NOT NULL REFERENCES candidates(id),
+    role TEXT NOT NULL,
+    band TEXT, final REAL, layer_a REAL, layer_b REAL, gate TEXT, floors TEXT,
+    rationale_shown TEXT,
+    decision TEXT NOT NULL CHECK (decision IN ('Advance','Pass','Hold')),
+    source TEXT,
+    decided_by TEXT,
+    undone_at TEXT,
+    undone_by TEXT
+);
+CREATE TABLE IF NOT EXISTS emails (
+    id {AUTO_ID},
+    decision_id INTEGER REFERENCES decisions(id),
+    candidate_id TEXT,
+    kind TEXT NOT NULL,
+    channel TEXT DEFAULT 'email',
+    purpose TEXT,
+    to_addr TEXT,
+    subject TEXT, body TEXT,
+    status TEXT NOT NULL,
+    attempts INTEGER DEFAULT 0,
+    provider_id TEXT, provider_event TEXT, error TEXT, outbox_path TEXT,
+    send_after TEXT,
+    created_at TEXT, updated_at TEXT,
+    UNIQUE(decision_id, kind, channel)
+);
+CREATE TABLE IF NOT EXISTS spot_checks (
+    id {AUTO_ID},
+    batch_id TEXT NOT NULL,
+    candidate_id TEXT NOT NULL,
+    role TEXT NOT NULL,
+    verdict TEXT,
+    ts TEXT,
+    by_user TEXT,
+    UNIQUE(batch_id, candidate_id)
+);
+CREATE TABLE IF NOT EXISTS batches (
+    id TEXT PRIMARY KEY,
+    started_at TEXT, finished_at TEXT,
+    n_new INTEGER, n_skipped INTEGER, n_failed INTEGER,
+    cost_usd REAL, mode TEXT
+);
+CREATE TABLE IF NOT EXISTS audit_log (
+    id {AUTO_ID},
+    ts TEXT NOT NULL,
+    event TEXT NOT NULL,
+    data TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS users (
+    username TEXT PRIMARY KEY,
+    display_name TEXT NOT NULL,
+    role TEXT NOT NULL,
+    pw_hash TEXT,
+    email TEXT,
+    active INTEGER DEFAULT 1,
+    created_at TEXT
+);
+CREATE TABLE IF NOT EXISTS comments (
+    id {AUTO_ID},
+    candidate_id TEXT NOT NULL,
+    author TEXT NOT NULL,
+    body TEXT NOT NULL,
+    mentions TEXT,
+    ts TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS reviews (
+    id {AUTO_ID},
+    candidate_id TEXT NOT NULL,
+    role TEXT NOT NULL,
+    requested_by TEXT NOT NULL,
+    assignee TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'open',
+    opinion TEXT,
+    note TEXT,
+    requested_at TEXT,
+    answered_at TEXT
+);
+CREATE TABLE IF NOT EXISTS stages (
+    candidate_id TEXT PRIMARY KEY,
+    role TEXT NOT NULL,
+    stage TEXT NOT NULL,
+    scheduled_for TEXT,
+    booking_ref TEXT,
+    outcome_note TEXT,
+    updated_at TEXT,
+    updated_by TEXT
+);
+CREATE TABLE IF NOT EXISTS scorecards (
+    id {AUTO_ID},
+    candidate_id TEXT NOT NULL,
+    interviewer TEXT NOT NULL,
+    ratings TEXT,
+    recommendation TEXT,
+    notes TEXT,
+    ts TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS calibration (
+    id {AUTO_ID},
+    candidate_id TEXT NOT NULL,
+    rater TEXT NOT NULL,
+    role TEXT NOT NULL,
+    rating TEXT NOT NULL,
+    system_band TEXT,
+    ts TEXT NOT NULL,
+    UNIQUE(candidate_id, rater)
+);
+CREATE TABLE IF NOT EXISTS settings (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL,
+    updated_by TEXT,
+    updated_at TEXT
+);
+CREATE TABLE IF NOT EXISTS params_versions (
+    version INTEGER PRIMARY KEY,
+    params_json TEXT NOT NULL,
+    note TEXT,
+    created_by TEXT,
+    created_at TEXT,
+    active INTEGER DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS webhook_events (
+    id {AUTO_ID},
+    source TEXT NOT NULL,
+    event_type TEXT,
+    ref TEXT,
+    payload TEXT,
+    ts TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS cv_files (
+    file_name TEXT PRIMARY KEY,
+    data {BLOB} NOT NULL,
+    file_hash TEXT NOT NULL,
+    meta TEXT,
+    received_at TEXT
+);
+CREATE TABLE IF NOT EXISTS inbound_messages (
+    message_id TEXT PRIMARY KEY,
+    received_at TEXT,
+    files TEXT
+)
+"""
+AUTO_ID = {"sqlite": "INTEGER PRIMARY KEY AUTOINCREMENT",
+           "postgres": "INTEGER GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY"}
+BLOB = {"sqlite": "BLOB", "postgres": "BYTEA"}
+
+
+def now() -> str:
+    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
+_db_path: Path = config.DB_PATH
+_force_sqlite = False
+_schema_ready: set[str] = set()
+
+
+def set_db_path(path: Path, force_sqlite: bool = True) -> None:
+    """Tests point the store at a temp SQLite DB, ignoring DATABASE_URL."""
+    global _db_path, _force_sqlite
+    _db_path = Path(path)
+    _force_sqlite = force_sqlite and Path(path) != config.DB_PATH
+
+
+def db_path() -> Path:
+    """Local data folder (SQLite file, JSONL audit mirror, parse-failure list)."""
+    return _db_path
+
+
+def database_url() -> str | None:
+    """Postgres/Neon URL, or None for local SQLite. The demo never touches DATABASE_URL:
+    it uses DEMO_DATABASE_URL (e.g. a separate Neon branch) or local SQLite."""
+    if _force_sqlite:
+        return None
+    var = "DEMO_DATABASE_URL" if config.is_demo() else "DATABASE_URL"
+    url = os.environ.get(var, "").strip()
+    if url and not url.startswith(("postgres://", "postgresql://")):
+        raise RuntimeError(
+            f"{var} must be a Postgres connection string starting with postgresql://. In Neon, open "
+            "Dashboard > Connect, choose 'Connection string', and copy the value that starts with postgresql:// "
+            "(not the https:// Data API / REST address).")
+    return url or None
+
+
+def backend() -> str:
+    return "postgres" if database_url() else "sqlite"
+
+
+def _to_pg(sql: str) -> str:
+    """Translate the small SQLite dialect used here into Postgres."""
+    ignore = re.match(r"\s*INSERT OR IGNORE INTO", sql, re.I)
+    if ignore:
+        sql = re.sub(r"INSERT OR IGNORE INTO", "INSERT INTO", sql, count=1, flags=re.I).rstrip().rstrip(";")
+        ret = re.search(r"\s+RETURNING\s+.+$", sql, re.I | re.S)
+        if ret:  # Postgres wants ON CONFLICT before RETURNING
+            sql = sql[:ret.start()] + " ON CONFLICT DO NOTHING" + sql[ret.start():]
+        else:
+            sql += " ON CONFLICT DO NOTHING"
+    return sql.replace("?", "%s")
+
+
+class _PgConn:
+    """Makes a psycopg connection look like sqlite3's (execute -> cursor, dict rows)."""
+
+    def __init__(self, raw):
+        self.raw = raw
+
+    def execute(self, sql: str, params=()):
+        from psycopg.rows import dict_row
+
+        cur = self.raw.cursor(row_factory=dict_row)
+        cur.execute(_to_pg(sql), tuple(params))
+        return cur
+
+    def commit(self):
+        self.raw.commit()
+
+    def close(self):  # connections are reused (see _pg); never closed by callers
+        pass
+
+
+def _declared_columns(backend: str) -> dict[str, list[tuple[str, str]]]:
+    """{table: [(column, type-with-default)]} parsed from SCHEMA, constraints left out."""
+    out = {}
+    sql = SCHEMA.format(AUTO_ID=AUTO_ID[backend], BLOB=BLOB[backend])
+    for m in re.finditer(r"CREATE TABLE IF NOT EXISTS (\w+) \((.*?)\n\)", sql, re.S):
+        cols = []
+        for line in m.group(2).splitlines():
+            line = re.sub(r"\s+CHECK\s*\(.*\)", "", line.strip()).rstrip(",")  # CHECK (...) holds commas
+            if not line or line.upper().startswith(("UNIQUE", "PRIMARY KEY", "FOREIGN KEY", "CHECK")):
+                continue
+            for part in [p.strip() for p in line.split(",") if p.strip()]:
+                name, _, rest = part.partition(" ")
+                typ = rest.split()[0] if rest else "TEXT"
+                default = re.search(r"DEFAULT\s+(\S+)", rest, re.I)
+                cols.append((name, typ + (f" DEFAULT {default.group(1)}" if default else "")))
+        out[m.group(1)] = cols
+    return out
+
+
+_migrated: set[str] = set()
+
+
+def _migrate(conn, backend: str) -> None:
+    """Add columns that newer versions declare but an older database lacks (never drops anything)."""
+    key = f"{backend}:{database_url() or _db_path}"
+    if key in _migrated:
+        return
+    for table, cols in _declared_columns(backend).items():
+        if backend == "sqlite":
+            have = {r[1] for r in conn.execute(f"PRAGMA table_info({table})").fetchall()}
+        else:
+            have = {r["column_name"] for r in conn.execute(
+                "SELECT column_name FROM information_schema.columns WHERE table_name = ?", (table,)).fetchall()}
+        for name, typ in cols:
+            if name not in have:
+                conn.execute(f"ALTER TABLE {table} ADD COLUMN {name} {typ}")
+    _migrated.add(key)
+
+
+_local = threading.local()
+
+
+def _sqlite_file(name: str) -> Path:
+    """Local SQLite file. When the web app chose the demo for this request, the demo gets its own
+    files next to the real ones (kargo.db -> kargo-demo.db), so the two can never mix."""
+    if config.current_mode() == "demo":
+        stem, _, ext = name.rpartition(".")
+        name = f"{stem}-demo.{ext}"
+    return _db_path.parent / name
+
+
+@contextmanager
+def _pg(url: str):
+    """One reusable Postgres connection per thread and URL. Opening a TLS connection to Neon costs
+    a round trip or three; reusing it makes a page load a handful of queries instead of a handful
+    of connections. Nested uses share the connection; the outermost commits (or rolls back)."""
+    import psycopg
+
+    pool = getattr(_local, "pg", None)
+    if pool is None:
+        pool = _local.pg = {}
+    entry = pool.get(url)
+    if entry is None or entry["raw"].closed or entry["raw"].broken:
+        entry = pool[url] = {"raw": psycopg.connect(url, connect_timeout=15), "depth": 0, "used": time.time()}
+    elif entry["depth"] == 0 and time.time() - entry["used"] > 60:
+        try:  # Neon may have closed an idle connection (compute suspended): check, reconnect if so
+            entry["raw"].execute("SELECT 1")
+            entry["raw"].commit()
+        except psycopg.Error:
+            try:
+                entry["raw"].close()
+            except psycopg.Error:
+                pass
+            entry = pool[url] = {"raw": psycopg.connect(url, connect_timeout=15), "depth": 0, "used": time.time()}
+    entry["depth"] += 1
+    try:
+        yield _PgConn(entry["raw"])
+        if entry["depth"] == 1:
+            entry["raw"].commit()
+    except BaseException:
+        if entry["depth"] == 1 and not entry["raw"].closed:
+            entry["raw"].rollback()
+        raise
+    finally:
+        entry["depth"] -= 1
+        entry["used"] = time.time()
+
+
+@contextmanager
+def connect():
+    if database_url() is None:
+        _db_path.parent.mkdir(parents=True, exist_ok=True)
+    url = database_url()
+    if url:
+        with _pg(url) as conn:
+            key = "pg:" + url
+            if key not in _schema_ready:
+                for stmt in SCHEMA.format(AUTO_ID=AUTO_ID["postgres"], BLOB=BLOB["postgres"]).split(";"):
+                    if stmt.strip():
+                        conn.execute(stmt)
+                _migrate(conn, "postgres")
+                conn.commit()
+                _schema_ready.add(key)
+            yield conn
+        return
+    else:
+        conn = sqlite3.connect(_sqlite_file(_db_path.name))
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA foreign_keys = ON")
+        conn.executescript(SCHEMA.format(AUTO_ID=AUTO_ID["sqlite"], BLOB=BLOB["sqlite"]))
+        _migrate(conn, "sqlite")
+    try:
+        yield conn
+        conn.commit()
+    finally:
+        conn.close()
+
+
+VAULT_SCHEMA = "CREATE TABLE IF NOT EXISTS vault_identities (candidate_id TEXT PRIMARY KEY, data TEXT NOT NULL)"
+
+
+def vault_url() -> str | None:
+    var = "DEMO_VAULT_DATABASE_URL" if config.is_demo() else "VAULT_DATABASE_URL"
+    url = os.environ.get(var, "").strip()
+    return url if url.startswith(("postgres://", "postgresql://")) and not _force_sqlite else None
+
+
+def vault_location() -> str:
+    if vault_url():
+        return "separate database"
+    return "main database (separate table)" if database_url() else "separate local file"
+
+
+@contextmanager
+def connect_vault():
+    """The identity vault's own connection: VAULT_DATABASE_URL (a second Neon database) if set,
+    else a separate table in the main Postgres database, else a separate SQLite file."""
+    url = vault_url() or database_url()
+    if url:
+        with _pg(url) as conn:
+            if "vault:" + url not in _schema_ready:
+                conn.execute(VAULT_SCHEMA)
+                conn.commit()
+                _schema_ready.add("vault:" + url)
+            yield conn
+        return
+    else:
+        _db_path.parent.mkdir(parents=True, exist_ok=True)
+        conn = sqlite3.connect(_sqlite_file("vault.db"))
+        conn.row_factory = sqlite3.Row
+        conn.execute(VAULT_SCHEMA)
+    try:
+        yield conn
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def audit(event: str, _conn=None, **fields) -> None:
+    """Append to the audit log (in the database) and to a local JSONL mirror.
+    Pass `_conn` when called inside an open transaction."""
+    record = {"ts": now(), "event": event, **fields}
+    row = (record["ts"], event, json.dumps(fields, ensure_ascii=False))
+    sql = "INSERT INTO audit_log (ts, event, data) VALUES (?, ?, ?)"
+    if _conn is not None:
+        _conn.execute(sql, row)
+    else:
+        with connect() as conn:
+            conn.execute(sql, row)
+    if config.storage_mode() == "files":  # the database row is the record; this mirror is local-only
+        path = _db_path.parent / config.AUDIT_LOG_PATH.name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("a", encoding="utf-8") as f:
+            f.write(json.dumps(record, ensure_ascii=False) + "\n")
+
+
+# ---------- candidates ----------
+
+def candidate_by_file(conn, file_name: str):
+    return conn.execute("SELECT * FROM candidates WHERE file_name = ?", (file_name,)).fetchone()
+
+
+def next_candidate_id(conn) -> str:
+    row = conn.execute("SELECT id FROM candidates ORDER BY id DESC LIMIT 1").fetchone()
+    n = int(row["id"].split("-")[1]) + 1 if row else 1
+    return f"KG-{n:04d}"
+
+
+def upsert_candidate(conn, rec: dict) -> None:
+    cols = list(rec)
+    conn.execute(
+        f"INSERT INTO candidates ({','.join(cols)}) VALUES ({','.join('?' * len(cols))}) "
+        f"ON CONFLICT(id) DO UPDATE SET {','.join(f'{c}=excluded.{c}' for c in cols if c != 'id')}",
+        [rec[c] for c in cols],
+    )
+
+
+def all_candidates(conn, include_erased: bool = False) -> list[dict]:
+    """Scored candidates (IDs reserved mid-batch are skipped). Erased ones only on request."""
+    sql = "SELECT * FROM candidates WHERE scored_at IS NOT NULL"
+    if not include_erased:
+        sql += " AND erased_at IS NULL"
+    rows = conn.execute(sql + " ORDER BY id").fetchall()
+    return [hydrate(r) for r in rows]
+
+
+def get_candidate(conn, cid: str) -> dict | None:
+    r = conn.execute("SELECT * FROM candidates WHERE id = ?", (cid,)).fetchone()
+    return hydrate(r) if r else None
+
+
+def hydrate(row) -> dict:
+    d = dict(row)
+    for k in ("llm_json", "results_json", "evidence_flags", "low_conf_reasons", "redaction_removed", "usage_json"):
+        d[k] = json.loads(d[k]) if d.get(k) else None
+    return d
+
+
+# ---------- decisions ----------
+
+def latest_decision(conn, cid: str):
+    """Latest decision that has not been undone."""
+    return conn.execute(
+        "SELECT * FROM decisions WHERE candidate_id = ? AND undone_at IS NULL ORDER BY id DESC LIMIT 1", (cid,)
+    ).fetchone()
+
+
+def decisions(conn) -> list[dict]:
+    return [dict(r) for r in conn.execute("SELECT * FROM decisions ORDER BY id DESC").fetchall()]
+
+
+# ---------- emails ----------
+
+def email_for_decision(conn, decision_id: int, kind: str | None = None):
+    """The primary email a decision produced (invite or rejection), or a specific kind."""
+    if kind:
+        return conn.execute("SELECT * FROM emails WHERE decision_id = ? AND kind = ? AND channel = 'email'",
+                            (decision_id, kind)).fetchone()
+    return conn.execute("SELECT * FROM emails WHERE decision_id = ? AND channel = 'email' ORDER BY id LIMIT 1",
+                        (decision_id,)).fetchone()
+
+
+def emails(conn) -> list[dict]:
+    return [dict(r) for r in conn.execute("SELECT * FROM emails ORDER BY id DESC").fetchall()]
+
+
+# ---------- generic helpers ----------
+
+def rows(conn, sql: str, params=()) -> list[dict]:
+    return [dict(r) for r in conn.execute(sql, params).fetchall()]
+
+
+def one(conn, sql: str, params=()) -> dict | None:
+    r = conn.execute(sql, params).fetchone()
+    return dict(r) if r else None
+
+
+def get_setting(conn, key: str, default=None):
+    r = conn.execute("SELECT value FROM settings WHERE key = ?", (key,)).fetchone()
+    return json.loads(r["value"]) if r else default
+
+
+def put_setting(conn, key: str, value, by: str | None = None) -> None:
+    conn.execute(
+        "INSERT INTO settings (key, value, updated_by, updated_at) VALUES (?, ?, ?, ?) "
+        "ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_by = excluded.updated_by, "
+        "updated_at = excluded.updated_at",
+        (key, json.dumps(value, ensure_ascii=False), by, now()),
+    )
+
+
+def wipe_all() -> None:
+    """Empty every table and the vault. Demo reset only."""
+    if not config.is_demo():
+        raise RuntimeError("wipe_all only runs in demo mode")
+    tables = re.findall(r"CREATE TABLE IF NOT EXISTS (\w+)", SCHEMA)
+    with connect() as conn:
+        for t in reversed(tables):  # children before parents (foreign keys)
+            conn.execute(f"DELETE FROM {t}")
+    with connect_vault() as conn:
+        conn.execute("DELETE FROM vault_identities")
+    _schema_ready.clear()
